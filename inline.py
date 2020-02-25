@@ -16,6 +16,7 @@ class Inliner:
             self.operators = config_data["operators"]
             self.keywords = config_data["keywords"]
         self.modules = {} # Dict mapping module names in file to module names
+        self._inlined_modules = {} # Dict mapping module names to their inlined versions; will be empty until _inline() is called
         self.input_path = input_path
         self.reference_tree = {}
 
@@ -113,13 +114,41 @@ class Inliner:
             Pre-conditions: _index() and _generate_reference_tree() have already been called
         '''
         # Phase 1: Establish the inlining order based on the reference tree
-        child_nodes = set()
-        for name, children in self.reference_tree.items():
-            for elem in children:
-                child_nodes.add(elem)
+        order = self._get_inline_order(self.reference_tree)       
         # STOPPED HERE
         
-                    
+    def _get_inline_order(self, ref_tree):
+        return self._get_inline_order_helper(ref_tree,[])
+    
+    def _get_inline_order_helper(self, ref_tree, order):
+        ''' Algorithm to identify the order in which modules will be inlined '''
+        if not ref_tree:
+            # Base case, the tree has been completely trimmed and we have the ordering
+            return order
+        else:
+            # Identify leaf nodes
+            leaves = set()
+            for name, children in ref_tree.items():
+                if not children:
+                    leaves.add(name)
+            if not leaves:
+                # There are no leaf nodes, implying a cycle must exist
+                # TODO
+                pass
+            else:
+                order.extend( list(leaves) ) # Put the current leaves on the back of the order
+                # Trim the tree
+                for name, children in ref_tree.items():
+                    for child in children.copy():
+                        if child in leaves:
+                            children.discard(child)
+                for name in leaves:
+                    ref_tree.pop(name, None)
+                # Now that the tree is trimmed, execute a recursive call on the trimmed tree
+                return self._get_inline_order_helper(ref_tree, order)
+
+            
+             
 
     def _process_module_instantiation(self,token):
         # Get text of whole statement
