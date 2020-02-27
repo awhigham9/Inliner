@@ -27,6 +27,7 @@ class Tokenizer:
         in_string = False
         in_comment = False
         in_block_comment = False
+        # TODO: Add an elif clause to identify '`' as the start of a compiler directive
         for c in line:
             # Comment processing
             if in_comment:
@@ -104,6 +105,11 @@ class Tokenizer:
                 t = Token(buffer, TokenType.OPERATOR)
                 tokens = self.append_non_empty(tokens,t)
                 buffer = c
+            elif c == "`":
+                # Catches the start of compiler directives, for which '`' is reserved
+                t = Token(buffer, self.select_type(buffer))
+                tokens = self.append_non_empty(tokens,t)
+                buffer = c
             else:
                 buffer += c
         t = Token(buffer, self.select_type(buffer))
@@ -124,6 +130,8 @@ class Tokenizer:
             Params: content (str)
             Returns: TokenType
         '''
+        # TODO: Add a function to identify a valid keyword according to the IEEE language standard
+        # https://ieeexplore.ieee.org/stamp/stamp.jsp?arnumber=1620780
         if self.is_keyword(content):
             return TokenType.KEYWORD
         elif self.is_operator(content):
