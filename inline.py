@@ -2,8 +2,10 @@ import json
 from tokenizer import Tokenizer
 from module import Module
 import re
-from util import *
+from util import GeneratorHelper
 from tokens import TokenType, Token
+from generator_helper import GeneratorHelper
+from copy import deepcopy
 
 class Inliner:
 
@@ -71,9 +73,9 @@ class Inliner:
         while(module_header[i].token_type != TokenType.IDENTIFIER):
             i += 1
         name = module_header[i].content
+        raw_module_header = list(map(lambda x: x.to_string(), module_header)) # Make a string version to call balanced bounds
         # Process the port list from the header
         ports = []
-        raw_module_header = list(map(lambda x: x.to_string(), module_header)) # Make a string version to call balanced bounds
         open_paren_idx = raw_module_header.index("(")
         close_paren_idx = balanced_bounds(raw_module_header,"(",")",open_paren_idx)
         port_list = module_header[open_paren_idx:close_paren_idx+1]
@@ -81,7 +83,7 @@ class Inliner:
         for token in port_list:
             if token.token_type == TokenType.IDENTIFIER:
                 ports.append(token.content)
-        #TODO: Identify the parameters in the body
+        # Process the parameter list in the module header
         parameters = []
         hit_parameter = False
         for token in module_body:
@@ -105,7 +107,7 @@ class Inliner:
             self.reference_tree[name] = set()
         for name, mod in self.modules.items():
             for token in mod.body:
-                if token.token_type == TokenType.IDENTIFIER and token.content in modules:
+                if token.token_type == TokenType.IDENTIFIER and token.content in self.modules:
                     # This module contains a reference to another module 
                     self.reference_tree[name].add(token.content)
 
@@ -115,10 +117,277 @@ class Inliner:
         '''
         # Phase 1: Establish the inlining order based on the reference tree
         order = self._get_inline_order(self.reference_tree)       
-        # STOPPED HERE
+        for name in order:
+            if not self.reference_tree[name]:
+                # This module is a leaf; it references no other modules
+                self._inlined_modules[name] = self.modules[name]
+            else:
+                # Inline this module
+                self._inlined_modules[name] = self._get_inlined_module(name)
+
+    def _get_inlined_module(self, name):
+        ''' Function which given a name appearing in the modules dictionary creates an inlined version of it
+        Params: name (str) which appears in self.modules
+        Returns: Inlined module object (module)
+        Pre-conditions:  _inline() is calling this function in the correct order, as the modules referenced by 
+                        'name' must be inlined before 'name' 
+        '''
+        top_body = self.modules[name].body
+        new_body = []
+        gen = GeneratorHelper(top_body)
+        token = gen.get_element()
+        while(token):
+            if token.token_type == TokenType.IDENTIFIER and token.content in self.modules:
+                try:
+                    inlined_portion = self._process_module_instantiation(gen,token)
+                    new_body.extend(inlined_portion)
+                except ValueError as e:
+                    raise ValueError(f"Error encountered while attempting to inline module {name}:\n{str(e)}")
+            else:
+                new_body.append(token)
+            token = gen.get_element()
+        return Module(name, new_body, self.modules[name].header, self.modules[name].ports, self.modules[name].parameters)
+                
+    def _process_module_instantiation(self, gen, curr_token):
+        ''' Method to extract a module instantiation from a generator input 
+        stream gen (GeneratorHelper), process it, and then write it to the output (List of Token) 
+        '''
+        balance = 1
+        instance_type = curr_token
+        statement = [curr_token]
+        token = gen.get_element()
+        while(token and token.content != ";"):
+            statement.append(token)
+            token = gen.get_element()
+        if not token:
+            raise ValueError(f"Incomplete module instantiation detected in input to Inliner in function Inliner._process_module_instantiation\nCheck input file {self.input_path} for proper Verilog Syntax")
+        statement.append(token) # Add on the ending semicolon
+        try:
+            inlined_portion = self._instantation_to_inlined_body(statement)
+        except ValueError:
+            raise # Just hand it up to the caller function
+        else:
+            return inlined_portion
+
+    def _instantation_to_inlined_body(self, instantiation):
+        ''' Accepts text of a  module instantiation (List of Tokens) 
+            in verilog syntax. Returns the body of the module instantiated with
+            the correct I/O assignments '''
+            
+        raw_text = list(map( lambda x : x.to_string(), instantiation))
+
+        # Get the names
+        module_name = instantiation[0].content
+        i = 1
+
+        # Get the parameter assignment list, if it exists
+        param_list = []
+        if "#" in raw_text:
+            idx = raw_text.index("#")
+            param_list_start = raw_text.index("(",idx)
+            param_list_end = balanced_bounds(raw_text, "(", ")", param_list_start)
+            param_list = instantiation[param_list_start + 1 : param_list_end]
+            i = param_list_end + 1
+
+        while(instantiation[i].token_type != TokenType.IDENTIFIER):
+            i += 1
+        instance_name = instantiation[i].content
+
+
+        # Get the port assignment list
+        if param_list:
+            port_list_start = raw_text.index("(", i + 1)
+        else:
+            port_list_start = raw_text.index("(")
+        port_list_end = balanced_bounds(raw_text, "(", ")", port_list_start)
+        port_list = instantiation[port_list_start + 1 : port_list_end]
+
+        # Identify the type of port list (positional or named) and param list (positional or named)
+        port_list_text = "".join([x.to_string() for x in port_list])
+        param_list_text = "".join([x.to_string() for x in param_list])
+        # A regex to match the naming list convention of port/parameter assignment
+        naming_re = "[\s\n]*((\.[\w\$]+\([`]*[\w\$']*\)[\s\n]*)*(,[\s\n]*)*)*(\.[\w\$]+\([`]*[\w\$']*\)[\s\n]*)"
+        # A regex to match the positional list convention of port/parameter assignment
+        positional_re = "[\s\n]*([\w\$]+[\s\n]*,[\s\n]*)*[\w\$]+[\s\n]*"
+        param_positional = re.fullmatch(naming_re,param_list_text)
+        param_naming = re.fullmatch(naming_re,param_list_text)
+        port_positional = re.fullmatch(positional_re,port_list_text)
+        port_naming = re.fullmatch(naming_re,port_list_text)
+
+        # Parse the param and port assignment lists now that we know their format
+        param_assignments = {}
+        if param_list:
+            # TODO
+            if param_naming:
+                param_assignments = self._parse_named_param_list(param_list, module_name)
+            elif param_positional:
+                param_assignments = self._parse_positional_param_list(param_list, module_name)
+            else:
+                raise ValueError(f"Invalid parameter list syntax detected in Inliner._instantiation_to_inlined_body:" /
+            "\n" + "".join(raw_text) + "\n" + f"Check file {self.input_path} for proper verilog syntax.")
+        port_assignments = {}
+        if port_naming:
+            port_assignments = self._parse_named_port_list(port_list, module_name)
+        elif port_positional:
+            port_assignments = self._parse_positional_port_list(port_list, module_name)
+
+        # Resolve naming collisions by prefixing variable names
+        old_body = self.modules[module_name].body
+        for token in old_body:
+            if token.token_type == TokenType.IDENTIFIER:
+                token.content = self._prefix_name(instance_name,token.content)
+        for key in param_assignments.copy():
+            new_key = self._prefix_name(instance_name,key)
+            param_assignments[new_key] = param_assignments[key]
+            del param_assignments[key]
+        for key in port_assignments.copy():
+            new_key = self._prefix_name(instance_name,key)
+            port_assignments[new_key] = port_assignments[key]
+            del port_assignments[key]
+
+        # Modify the body of the module by adding assignments, and renaming inputs and outputs to wires or regs.
+        inlined_body = []
+        gen = GeneratorHelper(old_body)
+        token = gen.get_element()
+        buffer = []
+        output_regs = []
+        output_wires = []
+        tkzr = Tokenizer(self.config_path)
+        # Change the input and output declarations
+        while( token.content != 'endmodule'):
+            buffer.append(token)
+            if buffer[-1].content == ";":
+                # End of a statement, process it
+                stmt = list(map(lambda x : x.to_string(), buffer))
+                new_stmt = stmt
+                if "input" in stmt:
+                    i = stmt.index("input")
+                    new_stmt[i] = "wire"
+                    ports = [key for key in port_assignments if key in stmt] # Input ports mentioned in the statement
+                    for port in ports:
+                        if port_assignments[port]:
+                            # If the port wasn't left empty
+                            new_stmt.append("\n")
+                            new_stmt.append(f"assign {port} = {port_assignments[port]};")
+                    # STOPPED HERE
+                elif "output" in stmt:
+                    text = "".join(stmt)
+                    output_reg_re = '[\\s\n]*output[\\s\n]+reg'
+                    hasOutputReg = re.match(output_reg_re,text)
+                    if hasOutputReg:
+                        new_stmt.remove("output")
+                        for t in buffer:
+                            if t.token_type == TokenType.IDENTIFIER:
+                                output_regs.append(t)
+                    else:
+                        i = stmt.index("output")
+                        new_stmt[i] = "wire"
+                        for t in buffer:
+                            if t.token_type == TokenType.IDENTIFIER:
+                                output_wires.append(t)
+                elif "inout" in stmt:
+                    # TODO implement functionality for inout ports
+                    pass
+                elif "parameter" in stmt:
+                    # TODO: implement detecion multiple assignments of multiple params in one line
+                    # Example: 'parameter P1, P2, P3 = <value>'
+                    param_assign_regex = ".*[\s\n]*parameter[\s\n]+([\w\$]+)[\s\n]*=[\s\n]*(.*?)[\s\n]*;"
+                    m = re.match(param_assign_regex, "".join(stmt))
+                    if m:
+                        if m.group(1) in param_assignments:
+                            val_idx = new_stmt.index(m.group(2))
+                            new_stmt[val_idx] = param_assignments[m.group(1)]
+                inlined_body.extend( tkzr.tokenize( "".join(new_stmt)) )
+                buffer = [] # Empty the buffer
+            token = gen.get_element()
+        inlined_body.extend(buffer)
+        # Add on the output assignments at the end of the module body
+        # TODO: There will be errors if the connection to the output is a reg because these are continuous assignments
+        # How do we solve this problem?
+        for port in output_regs:
+            s = f"\nassign {port_assignments[port.content]} = {port.content};"
+            inlined_body.extend( tkzr.tokenize(s) )
+        for port in output_wires:
+            s = f"\nassign {port_assignments[port.content]} = {port.content};"
+            inlined_body.extend( tkzr.tokenize(s) )
+        inlined_body.append( Token("\n", TokenType.WHTSPC) )
+        return inlined_body
         
+
+    def _prefix_name(self, prefix, name):
+        ''' Helper function to standardize the way variables are prefixed 
+            when they are being inlined into a module that references them
+            to avoid naming collisions.
+            Params: Prefix (str), name (str)
+            Returns: new variable name (str)
+        '''
+        return f"_{prefix}_{name}"
+
+    def _parse_positional_param_list(self, param_list, module_name):
+        ''' Function to parse a positional parameter list (List of tokens) in 
+            verilog syntax for a particular module, and return a dictionary
+            mapping parameter names (str) to strings (str), whether they 
+            represent a number, identifier, or otherwise.
+        '''
+        # TODO: Add error checking
+        # Remove spaces and commas, leaving only the parameter list arguments
+        param_list = [x for x in param_list if x.token_type != TokenType.WHTSPC]
+        param_list = [x for x in param_list if x.content != ","]
+        module_params = self.modules[module_name].ports
+        assignments = {}
+        min_size = min( len(module_params), len(param_list) )
+        for i in range( min_size ):
+            assignments[ module_params[i] ] = param_list[i].to_string()
+        return assignments  
+
+    def _parse_named_param_list(self, param_list, module_name):
+        ''' Function to parse a named parameter list (List of tokens) in 
+            verilog syntax for a particular module, and return a dictionary
+            mapping parameter names (str) to strings (str), whether they 
+            represent a number, identifier, or otherwise.
+        '''
+        # TODO: Add error checking
+        assignments = {}
+        regex = "\.([\w\$]*)\(([\w\$'`]*)\)" # Consider changing group 2 to any character
+        text = "".join(list(map(lambda x : x.to_string(), param_list)))
+        period = -1
+        while("." in text[period+1:]):
+            period = text.index(".",period+1)
+            text = text[period:] # Test this
+            m = re.match(regex, text)
+            assignments[m.group(1)] = m.group(2)
+        return assignments
+
+    def _parse_named_port_list(self, port_list, module_name):
+        ''' Function to parse a named port list (List of tokens) in 
+            verilog syntax for a particular module, and return a dictionary
+            mapping port names (str) to the connected reg or wire names (str)
+        '''
+        # TODO: Add error checking
+        assignments = {}
+        regex = "\.([\w\$]*)\(([\w\$'`]*)\)" # Consider changing group 2 to any character
+        text = "".join(list(map(lambda x : x.to_string(), port_list)))
+        period = -1
+        while("." in text[period+1:]):
+            period = text.index(".",period+1)
+            text = text[period:] # Test this
+            m = re.match(regex, text)
+            assignments[m.group(1)] = m.group(2)
+        return assignments        
+
+    def _parse_positional_port_list(self, port_list, module_name):
+        port_list = [x for x in port_list if x.token_type != TokenType.WHTSPC]
+        port_list = [x for x in port_list if x.content != ","]
+        ports = self.modules[module_name].ports
+        assignments = {}
+        min_size = min( len(ports), len(port_list) )
+        for i in range( min_size ):
+            assignments[ ports[i] ] = port_list[i].to_string()
+        return assignments  
+
     def _get_inline_order(self, ref_tree):
-        return self._get_inline_order_helper(ref_tree,[])
+        rt = deepcopy(ref_tree)
+        return self._get_inline_order_helper(rt,[])
     
     def _get_inline_order_helper(self, ref_tree, order):
         ''' Algorithm to identify the order in which modules will be inlined '''
@@ -141,51 +410,11 @@ class Inliner:
                 for name, children in ref_tree.items():
                     for child in children.copy():
                         if child in leaves:
-                            children.discard(child)
+                            children.remove(child)
                 for name in leaves:
                     ref_tree.pop(name, None)
                 # Now that the tree is trimmed, execute a recursive call on the trimmed tree
-                return self._get_inline_order_helper(ref_tree, order)
-
-            
-             
-
-    def _process_module_instantiation(self,token):
-        # Get text of whole statement
-        tokens = []
-        while(token != ";"):
-            instantiation_text.append(token)
-            token = self._get_token()
-        module_name = instantiation_text[0]
-        parameter_values = []
-        # Move to the instance name and record parameter instantiations along the way
-        i = 0
-        while(tokens[i].isspace() or tokens[i] == "#" or self.isNumber(token[i]) or
-            tokens[i] == "(" or tokens[i] == ")"):
-            if(self.isNumber(tokens[i])):
-                parameter_values.append(number)
-            i += 1
-        # The current token should now be the name of the instance
-        instance_name = token[i]
-        # Now parse the port assignments
-        port_list = []
-        open_paren_idx = module_header.index("(",i)
-        close_paren_idx = balanced_bounds(module_header,"(",")",open_paren_idx)
-        port_list = module_header[open_paren_idx:close_paren_idx+1]
-        port_list = remove_comments(port_list) # Remove comments
-        port_list = [tok for tok in port_list if not tok.isspace()] # Remove spaces
-        port_assignments_text = []
-        pass
-        #TODO     
-
-    def append_non_empty(self, tokens, token):
-        ''' Appends the string token only if it is not empty 
-        Params: List (tokens), str (token)
-        Returns: List 
-        '''
-        if(token):
-            tokens.append(token)
-        return tokens
+                return self._get_inline_order_helper(ref_tree, order)      
 
     def _output_module(self,name,prefix):
         ''' Returns module body with all idenitifiers prefixed by prefix '''
