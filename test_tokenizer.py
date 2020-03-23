@@ -9,23 +9,19 @@ class TestTokenizer(unittest.TestCase):
     def setUp(self):
         self.t = Tokenizer("config.json")
 
-    def test_tokenize_classification(self,path):
+    def test_tokenize_classification(self,path="sample.vl"):
         with open(path,"r") as f:
             s = f.read()
             tokens = self.t.tokenize(s)
             for token in tokens:
+                if token.token_type == TokenType.DEFAULT:
+                    print(f"{token.info()}\t***ERROR***")
                 print(token.info())
 
-    def test_tokenize_preservation(self,path,path2):
+    def test_tokenize_preservation(self,path="sample.vl"):
         with open(path,"r") as f:
-            with open(path2, 'w') as out:
-                s = f.read()
-                tokens = self.t.tokenize(s)
-                for token in tokens:
-                    out.write(token.content)      
-
-
-if __name__ == "__main__":
-    t = TestTokenizer()
-    t.setUp()
-    t.test_tokenize_preservation('sample/sample_top.v', 'test.vl')
+            s = f.read()
+            tokens = self.t.tokenize(s)
+            s2 = "".join([x.to_string() for x in tokens])
+            self.assertEqual(s,s2)
+                

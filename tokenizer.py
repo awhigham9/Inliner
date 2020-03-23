@@ -1,7 +1,6 @@
 import json
-from tokens import *
-from util import *
-import re
+from tokens import Token, TokenType
+import regexes
 
 class Tokenizer:
 
@@ -29,7 +28,7 @@ class Tokenizer:
         in_block_comment = False
         # TODO: Add an elif clause to identify '`' as the start of a compiler directive
         for c in line:
-            # Comment processing
+            # Comment processings
             if in_comment:
                 if c == "\n":
                     in_comment = False
@@ -40,14 +39,25 @@ class Tokenizer:
                 else:
                     buffer += c
             elif buffer == "//":
-                in_comment = True
-                buffer += c
+                if c != "\n":
+                    in_comment = True
+                    buffer += c
+                else:
+                    in_comment = False
+                    t = Token(buffer, TokenType.COMMENT)
+                    tokens.append(t)
+                    tokens.append( Token(c, TokenType.WHTSPC) )
+                    buffer = ""
             elif in_block_comment:
                 if buffer[-2:] == "*/":
                     in_block_comment = False
                     t = Token(buffer, TokenType.COMMENT)
                     tokens.append(t)
-                    buffer = c
+                    if c.isspace():
+                        tokens.append( Token(c, TokenType.WHTSPC) )
+                        buffer = ""
+                    else:
+                        buffer = c
                 else:
                     buffer += c
             elif buffer == "/*":
@@ -148,51 +158,35 @@ class Tokenizer:
             return TokenType.STRING
         elif str.isspace(content):
             return TokenType.WHTSPC
-        else:
+        elif self.is_identifier(content):
             return TokenType.IDENTIFIER
+        elif not content:
+            return TokenType.EMPTY_STRING
+        else:
+            print(f"WARNING: Token assigned TokenType.DEFAULT\nToken:{content}")
+            return TokenType.DEFAULT
 
-    def is_string(self,token):
-        str_re = "\".*\""
-        return bool(re.fullmatch(str_re,token))
+    def is_string(self,s):
+        return bool( regexes.string.fullmatch(s) )
 
-    def is_number(self,token):
+    def is_number(self,s):
         # Int check
-        try:
-            int(token)
-            return True
-        except:
-            pass
-        # Float check
-        try:
-            float(token)
-            return True
-        except:
-            pass
-        # bit/octal/hex string check
-        binary_re = "[\d]+\'[bB][10_\?XZ]+"
-        octal_re = "[\d]+\'[oO][(1-7)_\?XZ]+"
-        hex_re = "[\d]+\'[hH][\d(A-F)(a-f)_\?XZ]+"
-        decimal_re = "[\d]+\'[dD][\d_XZ\?]+"
-        unknown_re = "X|x"
-        high_imped_re = "Z|z|\\?"
-        return bool(re.fullmatch(binary_re,token)) or bool(re.fullmatch(octal_re,token)) or bool(re.fullmatch(hex_re,token)) \
-            or bool(re.fullmatch(decimal_re,token)) or bool(re.fullmatch(unknown_re,token)) or bool(re.fullmatch(high_imped_re,token))
+        return regexes.number.fullmatch(s)
 
     def is_comment(self,s):
-        comment_re = "\/\/.*"
-        block_comment_re = "\/\*[\S\s]*\*\/" #TODO: test this
-        return bool(re.fullmatch(comment_re,s)) or bool(re.fullmatch(block_comment_re,s))
+        return bool( regexes.comment.fullmatch(s)) or bool( regexes.block_comment.fullmatch(s) )
 
     def is_keyword(self,s):
         return s in self.keywords
 
     def is_system_task(self,s):
-        sys_task_re = "\$.*"
-        return bool(re.fullmatch(sys_task_re,s))
+        return bool( regexes.sys_task.fullmatch(s) )
 
     def is_compiler_directive(self,s):
-        comp_dir_re = "`.*"
-        return bool(re.fullmatch(comp_dir_re,s))
+        return bool( regexes.comp_dir.fullmatch(s) )
 
     def is_operator(self,s):
         return s in self.operators
+
+    def is_identifier(self,s):
+        return bool( regexes.identifier.fullmatch(s) )

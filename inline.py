@@ -2,6 +2,7 @@ import json
 from tokenizer import Tokenizer
 from module import Module
 import re
+import regexes
 from util import GeneratorHelper
 from tokens import TokenType, Token
 from generator_helper import GeneratorHelper
@@ -35,9 +36,14 @@ class Inliner:
     def _get_token(self):
         return next(self._token_gen, None)
 
-    def inline(self, path_out):
+    def inline(self):
         ''' The inlining function exposed as part of the API '''
-        pass #TODO
+        self._index()
+        print("Indexing complete . . .")
+        self._generate_reference_tree()
+        print("Reference tree generation complete . . .")
+        self._inline()
+        print("Inlining complete . . .")
     
     def _index(self):
         token = self._get_token()
@@ -99,7 +105,8 @@ class Inliner:
 
     def _generate_reference_tree(self):
         ''' Algorithm to generate the reference tree which
-            stores which modules reference which, in a tree data structure.
+            stores which modules reference which other modules, in a tree implemented
+            as a dicitonary mapping names (str) to sets of names (set, str).
             This can then be used to efficiently inline the files without error.
             Pre-conditions: The modules have already been indexed with _index()
         '''
@@ -137,7 +144,7 @@ class Inliner:
         gen = GeneratorHelper(top_body)
         token = gen.get_element()
         while(token):
-            if token.token_type == TokenType.IDENTIFIER and token.content in self.modules:
+            if token.token_type == TokenType.IDENTIFIER and token.content in self._inlined_modules:
                 try:
                     inlined_portion = self._process_module_instantiation(gen,token)
                     new_body.extend(inlined_portion)
@@ -187,6 +194,7 @@ class Inliner:
             param_list_start = raw_text.index("(",idx)
             param_list_end = balanced_bounds(raw_text, "(", ")", param_list_start)
             param_list = instantiation[param_list_start + 1 : param_list_end]
+            param_list = [tok for tok in param_list if tok.token_type != TokenType.COMMENT and tok.token_type != TokenType.WHTSPC]
             i = param_list_end + 1
 
         while(instantiation[i].token_type != TokenType.IDENTIFIER):
@@ -201,23 +209,22 @@ class Inliner:
             port_list_start = raw_text.index("(")
         port_list_end = balanced_bounds(raw_text, "(", ")", port_list_start)
         port_list = instantiation[port_list_start + 1 : port_list_end]
+        port_list = [tok for tok in port_list if tok.token_type != TokenType.COMMENT and tok.token_type != TokenType.WHTSPC]
 
         # Identify the type of port list (positional or named) and param list (positional or named)
         port_list_text = "".join([x.to_string() for x in port_list])
         param_list_text = "".join([x.to_string() for x in param_list])
-        # A regex to match the naming list convention of port/parameter assignment
-        naming_re = "[\s\n]*((\.[\w\$]+\([`]*[\w\$']*\)[\s\n]*)*(,[\s\n]*)*)*(\.[\w\$]+\([`]*[\w\$']*\)[\s\n]*)"
-        # A regex to match the positional list convention of port/parameter assignment
-        positional_re = "[\s\n]*([\w\$]+[\s\n]*,[\s\n]*)*[\w\$]+[\s\n]*"
-        param_positional = re.fullmatch(naming_re,param_list_text)
-        param_naming = re.fullmatch(naming_re,param_list_text)
-        port_positional = re.fullmatch(positional_re,port_list_text)
-        port_naming = re.fullmatch(naming_re,port_list_text)
+        # A regex for an identifier or an indexed identifier
+        
+        # Regexes to match the naming list and positional list convention of port/parameter assignment
+        param_positional = regexes.positional_port_list.fullmatch(param_list_text)
+        param_naming = regexes.named_port_list.fullmatch(param_list_text)
+        port_positional = regexes.positional_port_list.fullmatch(port_list_text)
+        port_naming = regexes.named_port_list.fullmatch(port_list_text)
 
         # Parse the param and port assignment lists now that we know their format
         param_assignments = {}
         if param_list:
-            # TODO
             if param_naming:
                 param_assignments = self._parse_named_param_list(param_list, module_name)
             elif param_positional:
@@ -232,7 +239,7 @@ class Inliner:
             port_assignments = self._parse_positional_port_list(port_list, module_name)
 
         # Resolve naming collisions by prefixing variable names
-        old_body = self.modules[module_name].body
+        old_body = self._inlined_modules[module_name].body
         for token in old_body:
             if token.token_type == TokenType.IDENTIFIER:
                 token.content = self._prefix_name(instance_name,token.content)
@@ -256,48 +263,75 @@ class Inliner:
         # Change the input and output declarations
         while( token.content != 'endmodule'):
             buffer.append(token)
+            # End of a statement, process it
             if buffer[-1].content == ";":
-                # End of a statement, process it
-                stmt = list(map(lambda x : x.to_string(), buffer))
-                new_stmt = stmt
+                # stmt is buffer without comments
+                stmt = [x for x in buffer if x.token_type != TokenType.COMMENT]
+                stmt = list(map(lambda x : x.to_string(), stmt))
+                modified_stmt = deepcopy(stmt)
                 if "input" in stmt:
                     i = stmt.index("input")
-                    new_stmt[i] = "wire"
+                    modified_stmt[i] = "wire"
                     ports = [key for key in port_assignments if key in stmt] # Input ports mentioned in the statement
                     for port in ports:
                         if port_assignments[port]:
                             # If the port wasn't left empty
-                            new_stmt.append("\n")
-                            new_stmt.append(f"assign {port} = {port_assignments[port]};")
-                    # STOPPED HERE
+                            modified_stmt.append("\n")
+                            modified_stmt.append(f"assign {port} = {port_assignments[port]};")
                 elif "output" in stmt:
+                    start = 0
+                    end = 0
+                    if "[" in stmt:
+                        # Remove the size field
+                        size_field = True
+                        start = stmt.index("[")
+                        end = balanced_bounds(stmt,"[","]",start)
                     text = "".join(stmt)
                     output_reg_re = '[\\s\n]*output[\\s\n]+reg'
                     hasOutputReg = re.match(output_reg_re,text)
                     if hasOutputReg:
-                        new_stmt.remove("output")
-                        for t in buffer:
+                        modified_stmt.remove("output")
+                        for t in buffer[end:]:
                             if t.token_type == TokenType.IDENTIFIER:
                                 output_regs.append(t)
                     else:
                         i = stmt.index("output")
-                        new_stmt[i] = "wire"
-                        for t in buffer:
+                        modified_stmt[i] = "wire"
+                        for t in buffer[end:]:
                             if t.token_type == TokenType.IDENTIFIER:
                                 output_wires.append(t)
                 elif "inout" in stmt:
                     # TODO implement functionality for inout ports
                     pass
                 elif "parameter" in stmt:
-                    # TODO: implement detecion multiple assignments of multiple params in one line
+                    # TODO: implement detection multiple assignments of multiple params in one line
                     # Example: 'parameter P1, P2, P3 = <value>'
                     param_assign_regex = ".*[\s\n]*parameter[\s\n]+([\w\$]+)[\s\n]*=[\s\n]*(.*?)[\s\n]*;"
                     m = re.match(param_assign_regex, "".join(stmt))
                     if m:
                         if m.group(1) in param_assignments:
-                            val_idx = new_stmt.index(m.group(2))
-                            new_stmt[val_idx] = param_assignments[m.group(1)]
-                inlined_body.extend( tkzr.tokenize( "".join(new_stmt)) )
+                            val_idx = modified_stmt.index(m.group(2))
+                            modified_stmt[val_idx] = param_assignments[m.group(1)]
+                modified_stmt = tkzr.tokenize( "".join(modified_stmt) )
+                i = 0
+                j = 0
+                # Merge the comments back into the output added to the inlined body
+                while(i < len(modified_stmt) and j < len(buffer)): 
+                    if buffer[j].token_type == TokenType.COMMENT:
+                        inlined_body.append(buffer[j])
+                        j += 1
+                    else:
+                        inlined_body.append(modified_stmt[i])
+                        i += 1
+                        j += 1
+                if len(buffer) < len(modified_stmt):
+                    while(i < len(modified_stmt)):
+                        inlined_body.append(modified_stmt[i])
+                        i += 1
+                elif len(modified_stmt) < len(buffer):
+                    while(j < len(buffer) - 1): # Minus 1 to avoid the final semicolon
+                        inlined_body.append(buffer[j])
+                        j += 1
                 buffer = [] # Empty the buffer
             token = gen.get_element()
         inlined_body.extend(buffer)
@@ -305,11 +339,13 @@ class Inliner:
         # TODO: There will be errors if the connection to the output is a reg because these are continuous assignments
         # How do we solve this problem?
         for port in output_regs:
-            s = f"\nassign {port_assignments[port.content]} = {port.content};"
-            inlined_body.extend( tkzr.tokenize(s) )
+            if port_assignments[port.content]: # Don't add if the port was left disconnected
+                s = f"\nassign {port_assignments[port.content]} = {port.content};"
+                inlined_body.extend( tkzr.tokenize(s) )
         for port in output_wires:
-            s = f"\nassign {port_assignments[port.content]} = {port.content};"
-            inlined_body.extend( tkzr.tokenize(s) )
+            if port_assignments[port.content]: # Don't add if the port was left disconnected
+                s = f"\nassign {port_assignments[port.content]} = {port.content};"
+                inlined_body.extend( tkzr.tokenize(s) )
         inlined_body.append( Token("\n", TokenType.WHTSPC) )
         return inlined_body
         
@@ -348,7 +384,7 @@ class Inliner:
         '''
         # TODO: Add error checking
         assignments = {}
-        regex = "\.([\w\$]*)\(([\w\$'`]*)\)" # Consider changing group 2 to any character
+        regex = f"\.({regexes.identifier})\((({regexes.identifier})|({regexes.number}))\)" # Consider changing group 2 to any character
         text = "".join(list(map(lambda x : x.to_string(), param_list)))
         period = -1
         while("." in text[period+1:]):
@@ -359,20 +395,23 @@ class Inliner:
         return assignments
 
     def _parse_named_port_list(self, port_list, module_name):
-        ''' Function to parse a named port list (List of tokens) in 
+        ''' Function to parse a named port assignment list (List of tokens) in 
             verilog syntax for a particular module, and return a dictionary
             mapping port names (str) to the connected reg or wire names (str)
         '''
         # TODO: Add error checking
         assignments = {}
-        regex = "\.([\w\$]*)\(([\w\$'`]*)\)" # Consider changing group 2 to any character
+        regex = f"\.({regexes.s_identifier})\((.*?)\)" 
         text = "".join(list(map(lambda x : x.to_string(), port_list)))
-        period = -1
-        while("." in text[period+1:]):
-            period = text.index(".",period+1)
-            text = text[period:] # Test this
+        period = text.index(".")
+        text = text[period:]
+        while("." in text[1:]):
             m = re.match(regex, text)
             assignments[m.group(1)] = m.group(2)
+            period = text.index(".",1)
+            text = text[period:] # Test this
+        m = re.match(regex, text)
+        assignments[m.group(1)] = m.group(2) # Add the last one
         return assignments        
 
     def _parse_positional_port_list(self, port_list, module_name):
@@ -402,7 +441,7 @@ class Inliner:
                     leaves.add(name)
             if not leaves:
                 # There are no leaf nodes, implying a cycle must exist
-                # TODO
+                # TODO: Throw an error when this occurs
                 pass
             else:
                 order.extend( list(leaves) ) # Put the current leaves on the back of the order
@@ -416,98 +455,33 @@ class Inliner:
                 # Now that the tree is trimmed, execute a recursive call on the trimmed tree
                 return self._get_inline_order_helper(ref_tree, order)      
 
-    def _output_module(self,name,prefix):
-        ''' Returns module body with all idenitifiers prefixed by prefix '''
-        if name not in self.modules:
-            raise ValueError(f"Module by name {name} has not been processed by this Inliner instance")
-        else:
-            mod = self.modules[name]
-            comment = False
-            block_comment = False
-            new_body = []
-            for token in mod.body:
-                if comment:
-                    if token == "\n":
-                        comment = False
-                    new_body.append(token)
-                elif block_comment:
-                    if token == "*/":
-                        block_comment = False
-                    new_body.append(token)
-                elif token == "//":
-                    comment = True
-                    new_body.append(token)
-                elif token == "/*":
-                    block_comment = True
-                    new_body.append(token)
-                elif token == "input":
-                    #Replace inputs with wires
-                    new_body.append("wire")
-                elif token.startswith("$"):
-                    # These are system tasks, not identifiers
-                    new_body.append(token)
-                elif token.startswith("`"):
-                    # These are special macros or preprocessor directives
-                    new_body.append(token)
-                elif self.isNumber(token) or token.isspace() or token in self.operators \
-                or token in self.keywords or token in self.separators or self.is_string(token):
-                    new_body.append(token) 
-                else:
-                    token = prefix + token
-                    new_body.append(token)
-            return "".join(new_body)
 
-
-def balanced_bounds(tokens, open_token, close_token, start=0):
+def balanced_bounds(strings, open_token, close_token, start=0):
     ''' An algorithm which given a list of strings = [s0, s1, ... , sn] 
-    and an open and closing tokens t0 and t1, will start at index 'start' 
+    and an open and closing strings t0 and t1, will start at index 'start' 
     and return the index at which an equal number of t0 and t1 have occurred '''
-    if not start < len(tokens):
+    if not start < len(strings):
         raise ValueError("Starting index too high")
-    if not tokens:
+    if not strings:
         return 0
     i = start
     # Go to the first open token
-    while(tokens[i] != open_token):
+    while(strings[i] != open_token):
         i += 1
-        if not i < len(tokens):
+        if not i < len(strings):
             raise ValueError("Open token does not appear at or after start index")
     count = 1
     i += 1
-    while(count != 0 and i < len(tokens)):
-        if(tokens[i] == open_token):
+    while(count != 0 and i < len(strings)):
+        if(strings[i] == open_token):
             count += 1
-        elif(tokens[i] == close_token):
+        elif(strings[i] == close_token):
             count -= 1
         i += 1
-    if not i < len(tokens) and count != 0:
-        raise ValueError("Input tokens do not contain balanced open_token and closing_token groupings")
+    if not i < len(strings) and count != 0:
+        raise ValueError("Input strings do not contain balanced open_token and closing_token groupings")
     else:
         return i - 1
-
-def remove_comments(tokens, start=0, end=None):
-    ''' Given a list of parsed tokens, remove all comments from this list
-    in the range [start,end). If end is not specified, go to the end of the list.
-    Params: tokens (List of str), start=0 (int), end=-1 (int)
-    Returns: List of str, with comments removed '''
-    comment = False
-    block_comment = False
-    out = []
-    for t in tokens:
-        if comment:
-            if t == "\n":
-                out.append(t)
-                comment = False
-        elif block_comment:
-            if t == "*/":
-                comment = False
-        elif t == "//":
-            comment = True
-        elif t == "/*":
-            block_comment = True
-        else:
-            out.append(t)
-    return out
 
 
 

@@ -10,6 +10,8 @@ class TokenType(enum.Enum):
     SYS_TASK = 6
     COMP_DIRECTIVE = 7
     STRING = 8
+    DEFAULT = 9 # Used for detecting errors during debugging
+    EMPTY_STRING = 10 # Used for detecting errors during debugging
 
 class Token:
     ''' The wrapper class for raw verilog tokens '''
