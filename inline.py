@@ -1,20 +1,22 @@
 import json
-from inline import *
+from inliner import *
 import argparse
 
 def run(config_path, input_path, output_path, top_modules=None):
     print("Running. . .")
     i = Inliner(config_path,input_path)
     i.inline()
-    with open("out.v",'w') as f:
+    with open(output_path,'w') as f:
         if top_modules:
             for name in top_modules:
                 f.write("".join(list(map(lambda x : x.to_string(), i._inlined_modules[name].header))))
                 f.write("".join(list(map(lambda x : x.to_string(), i._inlined_modules[name].body))))
+                f.write("\n\n\n")
         else:
             for name in i._inlined_modules:
                 f.write("".join(list(map(lambda x : x.to_string(), i._inlined_modules[name].header))))
                 f.write("".join(list(map(lambda x : x.to_string(), i._inlined_modules[name].body))))
+                f.write("\n\n\n")
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Performs the inlining process on file using the settings specified in config")

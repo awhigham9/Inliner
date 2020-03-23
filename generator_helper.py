@@ -1,3 +1,4 @@
+import regexes
 
 class GeneratorHelper:
 

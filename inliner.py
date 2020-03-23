@@ -3,7 +3,6 @@ from tokenizer import Tokenizer
 from module import Module
 import re
 import regexes
-from util import GeneratorHelper
 from tokens import TokenType, Token
 from generator_helper import GeneratorHelper
 from copy import deepcopy
