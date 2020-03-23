@@ -17,7 +17,6 @@ class Tokenizer:
             # while "~&" and "&&" are "&" -> ['~', '&']
             self.binary_token_pairs = config_data["binary_token_pairs"]
             self.ternary_token_pairs = config_data["ternary_token_pairs"]
-            self.comment_symbols = config_data["comment_bounds"]
         
     def tokenize(self, line):
         ''' Takes a string and tokenizes it according to verilog syntax '''

@@ -62,11 +62,6 @@
         ";",
         ","
     ],
-    "comment_bounds": [ 
-        "//",
-        "/*",
-        "*/"
-    ],
     "keywords" : [
         "accept_on",
         "alias",
