@@ -1,6 +1,6 @@
 # Inliner
 
-The following software performs pre-processing of Verilog files for automatic test generation by inlining module instantiations. This software can receive a file containing a series of Verilog modules referencing other modules present in the file, and then peform a program transformation generating each module with all instantiations of other modules replaced with the body of the instantiated module; this is the process of inlining. Each inlined portion is modified to contain the correct port and parameter assignments, so that the inlined version of the module is functionally equivalent to the original. Currently, this software adheres to [1364-2005 - IEEE Standard for Verilog Hardware Description Language](https://doi.org/10.1109/IEEESTD.2006.99495). This standard however has been superseded by [1800-2009 - IEEE Standard for SystemVerilog--Unified Hardware Design, Specification, and Verification Language](https://ieeexplore.ieee.org/servlet/opac?punumber=5985441). In the future, the software will transition to supporting the new standard.
+The following software performs pre-processing of Verilog files for automatic test generation by inlining module instantiations. This software can receive a file containing a series of Verilog modules referencing other modules present in the file, and then peform a program transformation generating each module with all instantiations of other modules replaced with the body of the instantiated module; this is the process of inlining. Each inlined portion is modified to contain the correct port and parameter assignments, so that the inlined version of the module is functionally equivalent to the original. Currently, this software adheres to [1364-2005 - IEEE Standard for Verilog Hardware Description Language](https://doi.org/10.1109/IEEESTD.2006.99495). This standard, however, has been superseded by [1800-2009 - IEEE Standard for SystemVerilog--Unified Hardware Design, Specification, and Verification Language](https://ieeexplore.ieee.org/servlet/opac?punumber=5985441). In the future, the software will transition to supporting the new standard.
 
 ***
 
@@ -10,9 +10,12 @@ These instructions will get you a copy of the project up and running on your loc
 
 ### Prerequisites
 
-This software makes use of the the Icarus Verilog pre-processor to combine many Verilog files into a single file. While this is not necessary to use the python software, it is required to use the executable bash file and will automate the process of combining all relevant Verilog modules into one file. For instructions to install Icarus Verilog, go to [the Icarus Verilog website](http://iverilog.icarus.com/).
+The software requires python3.x.
 
-The software also requires python3.x.
+This software also makes use of the the Icarus Verilog pre-processor to combine many Verilog files into a single file. While this is not necessary to use the python software, it is required to use the executable bash file and will automate the process of combining all relevant Verilog modules into one file. For instructions to install Icarus Verilog, go to [the Icarus Verilog website](http://iverilog.icarus.com/).
+
+**NOTE: Currently, no part of the software uses the Icarus Verilog Pre-Processor. In the near future, however, a bash script will be added to streamline the execution process, and this will use it. For now, it is merely reccomended.**
+
 
 ### Installing
 
@@ -22,7 +25,9 @@ Installation can be done directly by cloning the git repository (found [here](ht
 git clone https://github.com/awhigham9/Inliner.git
 ```
 
-After installation, you can test the software on a provided sample by running the test.sh script.
+### Testing
+
+Automated installation tests coming soon. . .
 
 ***
 
@@ -30,7 +35,7 @@ After installation, you can test the software on a provided sample by running th
 
 ### Inlining Algorithm
 
-The core process of inlining Verilog modules is handled by the `Inliner` class found in inliner.py. This process was divided into a series of methods, each completing a step in the process. Labeled by their method name, the three steps are as follows:
+The core process of inlining Verilog modules is handled by the `Inliner` class found in inliner.py. The method `Inliner.inline()` encapsulates this algorithm, but in fact the algorithm is divided into a series of three distinct steps, each completed by a method call within `inline()`. Labeled by their method name, the three steps are as follows:
 
 1. `Inliner._index`
 
@@ -38,19 +43,19 @@ The core process of inlining Verilog modules is handled by the `Inliner` class f
 
 2. `Inliner._generate_reference_tree`
 
-   This function reads each module stored in `modules` and determines which other modules it references. From this information, a dictionary mapping module names (`str`) to the set composed of the names of the modules it references (`set` of `str`) is created. This dictionary is the `reference_tree` of that Inliner object. In this context, the term reference is used to mean the instantiation of a module within another. For example, if module A contains instances of modules B and C, its entry in the `reference_tree` would be: `reference_tree['A'] = {'B', 'C'}`, and it would be said that A references C and B. The reference tree is used to determine a valid module inlining order.
+   This function reads each module stored in `modules` and determines which other modules it references. From this information, a dictionary mapping module names (`str`) to the set composed of the names of the modules it references (`set` of `str`) is created. This dictionary is the `_reference_tree` of that Inliner object. In this context, the term reference is used to mean the instantiation of a module within another. For example, if module A contains instances of modules B and C, its entry in the `reference_tree` would be: `reference_tree['A'] = {'B', 'C'}`, and it would be said that A references C and B. The reference tree is used to determine a valid module inlining order.
 
 3. `Inliner._inline`
 
    This function performs the task of creating the inlined versions of each module and storing them in the `_inlined_modules` dictionary (maps `str` to `Module` objects). This process is as follows:
    + Call `_get_inline_order` to receive the order in which the reference tree must be evaluated to properly inline all modules.
    + Iterate through this order, doing the following at each step:
-     + If the module references other modules, call `_get_inlined_module` and store this new inlined version of the module in `_inlined_modules`. The process performed by `_get_inline_module` is commented within the code, but is essentially the process of identifying module instantations within the module body and swapping each instantiation statement for that modules inlined body. This "swap" entails adding input and output assignments, as well as assiging values to parameters.
+     + If the module references other modules, call `_get_inlined_module` and store this new inlined version of the module in `_inlined_modules`. The process performed by `_get_inlined_module` is essentially the process of identifying module instantations within the module body and swapping each instantiation statement for that module's inlined body. This "swap" entails adding input and output assignments, as well as assiging values to parameters.
      + If not, store the original module in `inlined_modules` since the inlined version is identical to the original.
 
-These methods must be called in a particular order, and so have been encapsulated within a single method which is designed to be called externally, `Inliner.inline`.
+To execute the algorithm from the commandline, use the script `inline.py`. More about running this script can be found in **Using the Software**.
 
-## File Manifest
+### File Manifest
 
 In alphabetical order:
 
@@ -79,4 +84,200 @@ In alphabetical order:
 + tokens.py
   + Contains the `Token` class and the `TokenType` enum. These are used to store and classify text tokens after lexing, respectively.
 
-## API Reference
+### Library Reference
+
+Coming soon . . .
+
+***
+
+## Using the Software
+
+To use the inlining script, you first must have a Verilog file containing **all** the modules that are used in the design.
+
+For example, if you have three files A.v, B.v, and C.v that are as follows:
+
+A.v:
+
+```verilog
+module A;
+    B instance_of_b;
+    C instance_of_c;
+    //Code1
+endmodule;
+```
+
+B.v:
+
+```verilog
+module B;
+    //Code2
+endmodule;
+```
+
+C.v:
+
+```verilog
+module C;
+    //Code3
+endmodule;
+```
+
+To inline module `A` you need to have a file, lets call it A_prepared.v, that is as follows:
+
+A_prepared.v:
+
+```verilog
+module A;
+    B instance_of_b;
+    C instance_of_c;
+    //Code1
+endmodule;
+
+module B;
+    //Code2
+endmodule;
+
+module C;
+    //Code3
+endmodule;
+```
+
+The order of the modules in this file does not matter.
+
+A file fitting this criteria could be made by hand, but on large designs this becomes tedious. The alternative solution is to use the Icarus Verilog pre-processor (ivlpp). This software executes pre-processor directives in Verilog files, including `include` statements. Using `include` statements, we can automate the addition of the modules we need in our top-level file. The only manual task is to add the `include` statements.
+
+Back to the example, we can modify A.v to be:
+
+```verilog
+`include "B.v"
+`include "C.v"
+
+module A;
+    B instance_of_b;
+    C instance_of_c;
+    //Code1
+endmodule;
+```
+
+Now that we have `include` statements we can run the command
+
+```bash
+/path_to_ivlpp_executable/ivlpp -o A_prepared.v A.v
+```
+
+which will provide us with a file named A_prepared.v the that looks like this:
+
+```verilog
+module B;
+    //Code2
+endmodule;
+
+module C;
+    //Code3
+endmodule;
+
+module A;
+    B instance_of_b;
+    C instance_of_c;
+    //Code1
+endmodule;
+```
+
+**Note**: Be sure all compiler directive settings, such as defines, are in accordance with your final preferences for the design before running ivlpp, because it will execute them along with the `include` statements. Ivlpp can be found in Icarus Verilog's installation directory.
+
+After doing this and obtaining a file with all the necessary modules, inlining them can be completed by running inline.py with your preferred commandline arguments. For guidance on using inline.py you can run:
+
+```bash
+python3 inline.py -h
+```
+
+For our example, let's say we want our output file of the inlining process to be named inlined_modules.v, and we only want module A to be present in this file. Then we would run:
+
+```bash
+python3 inline.py -o inlined_modules.v -t A A_prepared.v
+```
+
+After executing this command, you should find the file inlined_modules.v in the directory with the following contents:
+
+```verilog
+module A;
+    //Code2
+    //Code3
+    //Code1
+endmodule;
+```
+
+***
+
+## Remaining Issues
+
+The inlining software is not yet perfect, and there are still some issues that exist, and features in the Verilog standard that aren't yet supported. While a more complete list can be found on the GitHub repo, I will list some of the most notable and critical issues here.
+
+### Bugs in Inlined Module Output
+
++ Missing semicolons
+  + Currently, some lines will be missing semi-colons. This is due to a bug in `Inliner._instantation_to_inlined_body` which I have yet to fix. I will be working on finding its source and correcting it ASAP.
++ Redundant Declaration
+  + The function `Inliner._instantation_to_inlined_body` converts a module instantation to a piece of Verilog with the correct assignments corresponding to the port assignments of the original.
+  + Currently, it converts `output` nets to `wire` and `output reg` registers to `reg` using a simple find and replace mechanism. This is the naive solution, and the one I could implement most quickly.
+  + The issue with this is that often, Verilog modules declare an `output` and declare a `reg` of the same name. Using the find and replace method causes both declarations to remain, producing there to be two declarations of `reg` or a `wire` and a `reg` of the same name in the module. This cannot be compiled.
+  + To fix this, always remove the first declaration.
+  + This should be fixed soon.
+  + An easier to follow diagram is below
+
+Un-inlined Original:
+
+```verilog
+module A;
+    B instance_of_B
+    //Code
+endmodule;
+
+module B;
+    output x;
+    reg x;
+    //Other code
+endmodule;
+```
+
+Current, broken output:
+
+```verilog
+module A;
+  wire x;
+  reg x;
+  //Other code
+  //Code
+endmodule;
+```
+
+Correct output:
+
+```verilog
+module A;
+    reg x;
+    //Other code
+    //Code
+endmodule;
+```
+
++ Possible incorrect tokenization
+  + It is also possible, though unlikely, a token will be parsed incorrectly. The tell-tale sign of this is a portion of code that appears to be unedited from its original source, which is usually indicated by the lack of a variable name being prefixed.
+  + If this occurs, identify the incorrectly parsed token (it will likely be printed as a default token warning) and post it as an issue on the GitHub (provided it isn't there already), or let me know.
+  + If the token is just a time statement (e.g. `100ns`), I know these are currently being classified default, and I am working on fixing it.
+
+### Unsupported features
+
+Some features haven't been added yet, but should be soon. These include:
+
++ `inout` ports
++ Attributes
++ Any elements in the 1800-2009 IEEE Standard for SystemVerilog not appearing in IEEE Standard 1364-2005.
+
+***
+
+## Authors
+
+Andrew Whigham
+
+To contact me about this software, email me at awhigham@ufl.edu
