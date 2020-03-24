@@ -14,7 +14,7 @@ The software requires python3.x.
 
 This software also makes use of the the Icarus Verilog pre-processor to combine many Verilog files into a single file. While this is not necessary to use the python software, it is required to use the executable bash file and will automate the process of combining all relevant Verilog modules into one file. For instructions to install Icarus Verilog, go to [the Icarus Verilog website](http://iverilog.icarus.com/).
 
-**NOTE: Currently, no part of the software uses the Icarus Verilog Pre-Processor. In the near future, however, a bash script will be added to streamline the execution process, and this will use it. For now, it is merely reccomended.**
+**NOTE: Currently, no part of the software uses the Icarus Verilog Pre-Processor. In the near future, however, a bash script will be added to streamline the execution process, and this will use it. For now, it is merely recommended.**
 
 ### Installing
 
