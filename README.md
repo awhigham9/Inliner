@@ -16,7 +16,6 @@ This software also makes use of the the Icarus Verilog pre-processor to combine 
 
 **NOTE: Currently, no part of the software uses the Icarus Verilog Pre-Processor. In the near future, however, a bash script will be added to streamline the execution process, and this will use it. For now, it is merely reccomended.**
 
-
 ### Installing
 
 Installation can be done directly by cloning the git repository (found [here](https://github.com/awhigham9/Inliner)) using the following command.
