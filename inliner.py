@@ -35,16 +35,20 @@ class Inliner:
     def _get_token(self):
         return next(self._token_gen, None)
 
-    def inline(self):
+    def inline(self,message=True):
         ''' The inlining function exposed as part of the API '''
         self._index()
-        print("Indexing complete . . .")
+        if(message):
+            print("Indexing complete . . .")
         self._generate_reference_tree()
-        print("Reference tree generation complete . . .")
+        if(message):
+            print("Reference tree generation complete . . .")
         self._inline()
-        print("Inlining complete . . .")
+        if(message):
+            print("Inlining complete . . .")
     
     def _index(self):
+        ''' Reads the input file '''
         token = self._get_token()
         while(token):
             if token.content == "module":

@@ -21,8 +21,8 @@ def run(config_path, input_path, output_path, top_modules=None):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Performs the inlining process on file using the settings specified in config")
     parser.add_argument("file", help="the input file whose modules will be inlined")
-    parser.add_argument("-c", "--config", nargs=1, help="the configuration file that speficies the verilog keywords and special characters (default: %(default)s)", default="config.json")
+    parser.add_argument("-c", "--config", nargs=1, help="the configuration file that speficies the verilog keywords and special characters (default: %(default)s)", default=["config.json"])
     parser.add_argument("-t", "--top", nargs="?", action="append", const="", help="the top level modules that should appear in the output path; if not specified, all modules are dumped to the output path")
-    parser.add_argument("-o", "--out", nargs=1, default="out.v", help="the output file path to which the inlined files will be dumped(default: %(default)s)")
+    parser.add_argument("-o", "--out", nargs=1, default=["out.v"], help="the output file path to which the inlined files will be dumped(default: %(default)s)")
     args = parser.parse_args()
     run(args.config[0], args.file, args.out[0], args.top)
