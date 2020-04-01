@@ -121,7 +121,7 @@ module C;
 endmodule;
 ```
 
-To inline module `A` you need to have a file, lets call it A_prepared.v, that is as follows:
+To inline module `A` you need to have a file, let's call it A_prepared.v for this example, that is as follows:
 
 A_prepared.v:
 
