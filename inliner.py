@@ -242,7 +242,7 @@ class Inliner:
             port_assignments = self._parse_positional_port_list(port_list, module_name)
 
         # Resolve naming collisions by prefixing variable names
-        old_body = self._inlined_modules[module_name].body
+        old_body = deepcopy(self._inlined_modules[module_name].body)
         for token in old_body:
             if token.token_type == TokenType.IDENTIFIER:
                 token.content = self._prefix_name(instance_name,token.content)
