@@ -62,7 +62,7 @@ In alphabetical order:
   + JSON file containing keywords, special characters, and special character sequences appearing in the Verilog syntax. This is primarily used during the lexing of the Verilog files. These keywords and operators are derived from the Verilog standard. The stored dictionary contains the following fields:
     + `keywords`: Verilog keywords to detect
     + `operators`: Verilog operators, as well as some other special characters that for the purpose of the naive lexing performed here can be treated as such
-    + `binary_token_pairs`: Special tokes that are two characters long. This is stored as a dictionary, where the second character is mapped to the first; e.g., "&" -> "~" is equivalent to "~&". This is used in the detection of operator tokens.
+    + `binary_token_pairs`: Special tokes that are two characters long. This is stored as a dictionary, where the second character is mapped to the first; e.g., "&" -> "\~" is equivalent to "\~&". This is used in the detection of operator tokens.
     + Ternary token pairs: Special tokens that are three characters long. This is just like `binary_token_pairs`, except the value mapped to is two characters, not one; e.g. "=" -> "!=" is equivalent to "!==".
 + generator_helper.py
   + Contains a wrapper class for Python's `generator` construct. Accepts an iterable and yields elements through a method call. Primarily used to pass an input stream between scopes more succinctly.
